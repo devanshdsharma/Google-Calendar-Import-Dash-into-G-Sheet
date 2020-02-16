@@ -1,0 +1,283 @@
+function master_updater() {
+  fetch_google_calendars();
+  misc_events();
+  MDE_for_all();
+}
+
+function misc_mde_merged(){
+  misc_events();
+  MDE_for_all();
+}
+
+function fetch_google_calendars() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetnames_updt_all = ["Sheet1", "Sheet2", "Sheet3"];
+  for (var j = 0; j < sheetnames_updt_all.length; j++) {
+    var sheet = ss.getSheetByName(sheetnames_updt_all[j]);
+    var last_update = sheet.getRange("G5");
+    var time_stamp = Utilities.formatDate(new Date(), "Europe/Paris", 'dd/MM/yyyy HH:mm:ss');
+
+    var S_dd = sheet.getRange(1, 9).getValue(); // Reading date inputted by the user in the sheet
+    var S_mmmm = sheet.getRange(1, 8).getValue(); // S_dd -> Starting date's day. -- 12th January 2019 --> S_dd = 12
+    var S_yy = sheet.getRange(1, 10).getValue(); // S_mmmm -> Starting date's month -- January in above example
+    var S_time = "00:00:00"; // S_yy -> starting date's year -- 2012 for the aforementioned example
+    var E_dd = sheet.getRange(1, 13).getValue(); // + 1 has been added to M2 cell to compensate for non inclusivity of event endtime in cal.getEvents method.
+    var E_mmmm = sheet.getRange(1, 12).getValue(); // E_dd, E_mmmm, E_yy -> same concept as above but for ending date
+    var E_yy = sheet.getRange(1, 14).getValue(); // S_time, E_time -- unused -> for specifying the timezone --already specified in google sheet's document settings
+    var E_time = "00:00:00";
+
+    var mycal = sheet.getRange("C5").getValue(); // fetched the calendar id i.e. the email of the buyer
+    var cal = CalendarApp.getCalendarById(mycal);
+
+    try{
+      //var events = cal.getEvents(new Date("January 1, 2019 00:00:00 ECT"), new Date("December 31, 2019 23:59:59 CST")); // alternate form -- can hardcode data like this if needed
+      var events = cal.getEvents(new Date(S_mmmm + " " + S_dd + " " + S_yy), new Date(E_mmmm + " " + E_dd + " " + E_yy)); //!!!! end_time is not inclusive
+      //Logger.log(S_mmmm + " " + S_dd + " " + S_yy + " " + S_ti)
+      
+      var header = [
+        ["Calendar Address", "Event Title", "Event Description", "Event Location", "Event Start", "Event End", "Calculated Duration", "Visibility", "Date Created", "Last Updated", "Event Creation Type", "Created By", "All Day Event", "Recurring Event"]
+      ]
+      var range = sheet.getRange(9, 1, 1, 14);
+      range.setValues(header);
+      
+      var clearRange = sheet.getRange("A10:N1000");
+      clearRange.clearContent();
+      
+      // Loop through all calendar events found and write them out starting on calulated ROW 7 (i+2)
+      for (var i = 9; i < events.length; i++) {
+        var row = i + 1;
+        var myformula_placeholder = '';
+        
+        var details = [
+          [mycal, events[i].getTitle(), events[i].getDescription(), events[i].getLocation(), events[i].getStartTime(), events[i].getEndTime(), myformula_placeholder, ('' + events[i].getVisibility()), events[i].getDateCreated(), events[i].getLastUpdated(), events[i].getMyStatus(), events[i].getCreators(), events[i].isAllDayEvent(), events[i].isRecurringEvent()]
+        ];
+        var range = sheet.getRange(row, 1, 1, 14);
+        range.setValues(details);
+        
+        var cell = sheet.getRange(row, 7);
+        cell.setFormula('=(HOUR(F' + row + ')+(MINUTE(F' + row + ')/60))-(HOUR(E' + row + ')+(MINUTE(E' + row + ')/60))');
+        cell.setNumberFormat('.00');
+        
+      }
+      last_update.setValue(time_stamp);
+    }
+    
+    catch(e){
+      Logger.log(e)
+//      var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet()
+      sheet.getRange("G5").setValue('sync failed')
+      var log_sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('log')
+      var ref_for_lst_row = log_sheet.getRange("A1:A").getValues() // get last row
+      var lst_row = ref_for_lst_row.filter(String).length + 1; //lr = last row
+//      var time_stamp = Utilities.formatDate(new Date(), "Europe/Paris", 'dd/MM/yyyy HH:mm:ss');
+      log_sheet.getRange(lst_row,1).setValue(time_stamp)
+      log_sheet.getRange(lst_row,2).setValue(sheet.getName())
+      log_sheet.getRange(lst_row,3).setValue(e)
+    }
+  }
+}
+
+
+// #final code working
+function misc_events() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetnames = ["Sheet1", "Sheet2", "Sheet3"];
+  for (var z = 0; z < sheetnames.length; z++) {
+    var sheet = ss.getSheetByName(sheetnames[z]);
+
+    var clear_range = sheet.getRange("AV10:AX1000");
+    clear_range.clearContent();
+    
+    var mde_chk = sheet.getRange("B8").getValue();
+    if (mde_chk == "Y") {
+
+      var ref_for_lr = sheet.getRange("A9:A").getValues(); // get last row
+      var lr = ref_for_lr.filter(String).length + 9; //lr = last row
+
+      var start_date_list_vacation = [];
+      var end_date_list_vacataion = [];
+      var start_date_list_sick = [];
+      var end_date_list_sick = [];
+      var start_date_list_other = [];
+      var end_date_list_other = [];
+
+      var misc_event_chk = sheet.getRange("B8").getValue();
+      var mde_check = sheet.getRange("AZ1").getValue();
+
+      for (var i = 10; i < lr; i++) {
+        var chk_vacay = sheet.getRange('B' + i).getValue().toString();
+        if (chk_vacay == 'Vacances' | chk_vacay == 'vacances') {
+
+          var start_date_vacation_raw = sheet.getRange('E' + i).getValue();
+          var end_date_vacation_raw = sheet.getRange('F' + i).getValue();
+      
+          var start_date_vacation = new Date(start_date_vacation_raw.setHours(0,0,0,0))
+          var end_date_vacation = new Date(end_date_vacation_raw.setHours(0,0,0,0))
+          
+          start_date_list_vacation.push(start_date_vacation);
+          end_date_list_vacataion.push(end_date_vacation);
+
+          if (start_date_vacation == end_date_vacation) {
+            sheet.getRange(i, 48).setValue(start_date_vacation);
+          } else {
+            var date_list_vacation = [];
+
+            for (var k = 0; k < start_date_list_vacation.length; k++) {
+              // get milliseconds
+              var t1 = end_date_list_vacataion[k].getTime();
+              var t2 = start_date_list_vacation[k].getTime();
+              var diffInDays = (Math.floor((t1 - t2) / (24 * 3600 * 1000)) + 1); // 24*3600*1000 = milliseconds in a day
+
+              for (var j = 0; j < diffInDays; j++) {
+                var ms_per_day = 1000 * 60 * 60 * 24; // equals to one day in mili seconds, By calling .getTime() on any date, we an add or subtract dates to and from it
+                var misc_date = new Date(start_date_list_vacation[k].getTime() + j * ms_per_day);
+                date_list_vacation.push(misc_date);
+
+                for (var m = 0; m < date_list_vacation.length; m++) {
+                  sheet.getRange(10 + m, 48).setValue([date_list_vacation[m]]);
+                }
+              }
+            }
+          }
+        } else if (chk_vacay == 'Maladie' | chk_vacay == 'maladie') {
+          
+          var start_date_sick_raw = sheet.getRange('E' + i).getValue();
+          var end_date_sick_raw = sheet.getRange('F' + i).getValue();
+          
+          var start_date_sick = new Date(start_date_sick_raw.setHours(0,0,0,0)) // done to remove the time (if any) from the vacation, sick, other events
+          var end_date_sick = new Date(end_date_sick_raw.setHours(0,0,0,0))
+
+          start_date_list_sick.push(start_date_sick);
+          end_date_list_sick.push(end_date_sick);
+
+          if (start_date_sick == end_date_sick) {
+            sheet.getRange(i, 48).setValue(start_date_sick);
+          } else {
+            var date_list_sick = [];
+
+            for (var k = 0; k < start_date_list_sick.length; k++) {
+              // get milliseconds
+              var t1 = end_date_list_sick[k].getTime();
+              var t2 = start_date_list_sick[k].getTime();
+              var diffInDays = (Math.floor((t1 - t2) / (24 * 3600 * 1000)) + 1); // 24*3600*1000 = milliseconds in a day
+
+              for (var j = 0; j < diffInDays; j++) {
+                var ms_per_day = 1000 * 60 * 60 * 24; // equals to one day in mili seconds, By calling .getTime() on any date, we an add or subtract dates to and from it
+                var misc_date = new Date(start_date_list_sick[k].getTime() + j * ms_per_day);
+                date_list_sick.push(misc_date);
+
+                for (var m = 0; m < date_list_sick.length; m++) {
+                  sheet.getRange(10 + m, 49).setValue([date_list_sick[m]]);
+                }
+              }
+            }
+          }
+        } else if (chk_vacay == 'Autre' | chk_vacay == 'autre') {
+
+          var start_date_other_raw = sheet.getRange('E' + i).getValue();
+          var end_date_other_raw = sheet.getRange('F' + i).getValue();
+          
+          var start_date_other = new Date(start_date_other_raw.setHours(0,0,0,0)) // done to remove the time (if any) from the vacation, sick, other events
+          var end_date_other = new Date(end_date_other_raw.setHours(0,0,0,0))
+
+          start_date_list_other.push(start_date_other);
+          end_date_list_other.push(end_date_other);
+
+          if (start_date_other == end_date_other) {
+            sheet.getRange(i, 48).setValue(start_date_other);
+          } else {
+            var date_list_other = [];
+
+            for (var k = 0; k < start_date_list_other.length; k++) {
+              // get milliseconds
+              var t1 = end_date_list_other[k].getTime();
+              var t2 = start_date_list_other[k].getTime();
+              var diffInDays = (Math.floor((t1 - t2) / (24 * 3600 * 1000)) + 1); // 24*3600*1000 = milliseconds in a day
+
+              for (var j = 0; j < diffInDays; j++) {
+                var ms_per_day = 1000 * 60 * 60 * 24; // equals to one day in mili seconds, By calling .getTime() on any date, we an add or subtract dates to and from it
+                var misc_date = new Date(start_date_list_other[k].getTime() + j * ms_per_day);
+                date_list_other.push(misc_date);
+
+                for (var m = 0; m < date_list_other.length; m++) {
+                  sheet.getRange(10 + m, 50).setValue([date_list_other[m]]);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+  function MDE_for_all() { //MDE == Multi day event
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetnames = ["Sheet1", "Sheet2", "Sheet3"];
+    for (var z = 0; z < sheetnames.length; z++) {
+      var sheet = ss.getSheetByName(sheetnames[z]);
+
+      var mde_chk = sheet.getRange("AZ1").getValue();
+      
+      var clear_range = sheet.getRange("BA10:BA1000");
+      clear_range.clearContent()
+      
+      if (mde_chk == "Y") {
+
+        var ref_for_lr = sheet.getRange("A9:A").getValues(); // get last row
+        var lr = ref_for_lr.filter(String).length + 9; //lr = last row
+
+        var start_date_MDE_list = []
+        var end_date_MDE_list = []
+
+        for (var i = 10; i < lr; i++) {
+          var chk_Y = sheet.getRange('AZ' + i).getValue().toString();
+          if (chk_Y == 'Y') {
+
+            var start_date_MDE = new Date(sheet.getRange('E' + i).getValue().toDateString());
+            var end_date_MDE = new Date(sheet.getRange('F' + i).getValue().toDateString());
+
+            start_date_MDE_list.push(start_date_MDE)
+            end_date_MDE_list.push(end_date_MDE)
+
+            if (start_date_MDE == end_date_MDE) {
+              sheet.getRange(i, 53).setValue(start_date_MDE);
+            } else {
+              var date_list_MDE = []
+
+              for (var k = 0; k < start_date_MDE_list.length; k++) {
+                // get milliseconds
+                var t1 = end_date_MDE_list[k].getTime();
+                var t2 = start_date_MDE_list[k].getTime();
+                var diffInDays = (Math.floor((t1 - t2) / (24 * 3600 * 1000)) + 1); // 24*3600*1000 = milliseconds in a day
+
+                for (var j = 0; j < diffInDays; j++) {
+                  var ms_per_day = 1000 * 60 * 60 * 24; // equals to one day in mili seconds, By calling .getTime() on any date, we an add or subtract dates to and from it
+                  var misc_date = new Date(start_date_MDE_list[k].getTime() + j * ms_per_day);
+                  date_list_MDE.push(misc_date)
+
+                  for (var m = 0; m < date_list_MDE.length; m++) {
+                    sheet.getRange(10 + m, 53).setValue([date_list_MDE[m]]);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+
+function onOpen() {
+  var spreadsheet = SpreadsheetApp.getActive();
+
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu("Update")
+  .addItem("Update all (Takes ~ 10 minutes)","master_updater")
+  .addItem("Fetch new calendar data only","fetch_google_calendars")
+  .addItem("Update miscellaneous events only","misc_mde_merged")
+  .addToUi();
+}
